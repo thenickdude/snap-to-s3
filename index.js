@@ -17,37 +17,18 @@ class OptionsError extends Error {
 }
 
 const
-	optionDefinitions = [
+	mainOptions = [
 		{
 			name: "help",
 			type: Boolean,
 			description: "Show this page\n"
 		},
 		{
-			name: "all",
-			type: Boolean,
-			defaultValue: false,
-			description: "Migrate all snapshots whose tag is set to \"migrate\" ..."
-		},
-		{
-			name: "one",
-			type: Boolean,
-			defaultValue: false,
-			description: "... or migrate any one snapshot whose tag is set to \"migrate\" ..."
-		},
-		{
-			name: "snapshots",
-			type: String,
-			multiple: true,
-			typeLabel: "[underline]{SnapshotId} ...",
-			description: "... or provide an explicit list of snapshots to migrate (tags are ignored)"
-		},
-		{
 			name: "tag",
 			type: String,
 			defaultValue: "snap-to-s3",
 			typeLabel: "[underline]{name}",
-			description: "Name of tag you have used to mark snapshots for migration, and to mark created EBS temporary volumes (default: $default)\n"
+			description: "Name of tag you have used to mark snapshots for migration, and to mark created EBS temporary volumes (default: $default)"
 		},
 		{
 			name: "bucket",
@@ -99,14 +80,84 @@ const
 		}
 	],
 	
+	migrateOptions = [
+		{
+			name: "migrate",
+			type: Boolean,
+			defaultValue: false,
+			description: "Migrate EBS snapshots to S3"
+		},
+		{
+			name: "all",
+			type: Boolean,
+			defaultValue: false,
+			description: "Migrate all snapshots whose tag is set to \"migrate\""
+		},
+		{
+			name: "one",
+			type: Boolean,
+			defaultValue: false,
+			description: "... or migrate any one snapshot whose tag is set to \"migrate\""
+		},
+		{
+			name: "snapshots",
+			type: String,
+			multiple: true,
+			typeLabel: "[underline]{SnapshotId} ...",
+			description: "... or provide an explicit list of snapshots to migrate (tags are ignored)"
+		}
+	],
+	
+	validateOptions = [
+		{
+			name: "validate",
+			type: Boolean,
+			defaultValue: false,
+			description: "Validate uploaded snapshots from S3 against the original EBS snapshots (can be combined with --migrate)"
+		}
+	],
+	
+	validateOptionsForDisplayOnly = [
+		{
+			name: "all",
+			type: Boolean,
+			defaultValue: false,
+			description: "Validate all snapshots whose tag is set to \"migrated\""
+		},
+		{
+			name: "one",
+			type: Boolean,
+			defaultValue: false,
+			description: "... or validate any one snapshot whose tag is set to \"migrated\""
+		},
+		{
+			name: "snapshots",
+			type: String,
+			multiple: true,
+			typeLabel: "[underline]{SnapshotId} ...",
+			description: "... or provide an explicit list of snapshots to validate (tags are ignored)"
+		}
+	],
+	
 	usageSections = [
 		{
 			header: "snap-to-s3",
 			content: "Creates EBS volumes from snapshots, tars up their files, compresses them with LZ4, and uploads them to S3."
 		},
 		{
-			header: "Options",
-			optionList: optionDefinitions
+			header: "Migrate snapshots to S3",
+			optionList: migrateOptions
+		},
+		{
+			header: "Validate uploaded snapshots",
+			optionList: validateOptions.concat(validateOptionsForDisplayOnly)
+		},
+		{
+			header: "General options",
+			optionList: mainOptions
+		},
+		{
+			header: ""
 		}
 	];
 
@@ -115,7 +166,7 @@ let
 
 Logger.useDefaults();
 
-for (let option of optionDefinitions) {
+for (let option of mainOptions) {
 	if (option.description) {
 		option.description = option.description.replace("$default", option.defaultValue);
 	}
@@ -123,7 +174,7 @@ for (let option of optionDefinitions) {
 
 try {
 	// Parse command-line options
-	options = commandLineArgs(optionDefinitions)
+	options = commandLineArgs(mainOptions.concat(migrateOptions).concat(validateOptions))
 } catch (e) {
 	Logger.error("Error: " + e.message);
 	options = null;
@@ -133,7 +184,7 @@ if (options === null || options.help || process.argv.length <= 2) {
 	console.log(getUsage(usageSections));
 } else {
 	Promise.resolve().then(function() {
-		for (let option of optionDefinitions) {
+		for (let option of mainOptions) {
 			if (option.required) {
 				if (options[option.name] === undefined) {
 					throw new OptionsError("Option --" + option.name + " is required!");
@@ -160,39 +211,90 @@ if (options === null || options.help || process.argv.length <= 2) {
 			throw new OptionsError("You must supply exactly one of --snapshots, --all or --one options");
 		}
 		
-		let
+		if (!options.migrate && !options.validate) {
+			throw new OptionsError("You must supply at least one of --migrate or --validate");
+		}
+
+        let
 			snap = new SnapToS3(options);
 		
-		if (options.all || options.one) {
+		if (options.migrate) {
 			let
 				promise;
 			
 			if (options.all) {
 				promise = snap.migrateAllTaggedSnapshots();
-			} else {
+			} else if (options.one) {
 				promise = snap.migrateOneTaggedSnapshot();
+			} else {
+				promise = snap.migrateSnapshots(options.snapshots);
 			}
 			
-			return promise.then(migratedAny => {
-				if (!migratedAny) {
-					Logger.error("No snapshots to migrate (snapshots must have tag \"" + options["tag"] + "\" set to \"migrate\" to be eligible)");
+			return promise.then(
+				migrated => {
+					if (migrated.length === 0) {
+						Logger.error("No snapshots to migrate (snapshots must have tag \"" + options.tag + "\" set to \"migrate\" to be eligible)");
+					}
+				},
+				error => {
+					if (error instanceof SnapToS3.SnapshotMigrationError) {
+						Logger.get(error.snapshotID).error(error.error);
+						Logger.error("");
+						Logger.error("Terminating due to fatal errors.");
+						process.exitCode = 1;
+					} else {
+						throw error;
+					}
 				}
-			});
-		} else {
-			return snap.migrateSnapshots(options.snapshots);
+			);
+		} else if (options.validate) {
+			let
+				promise;
+			
+			if (options.all) {
+				promise = snap.validateAllTaggedSnapshots();
+			} else if (options.one) {
+				promise = snap.validateOneTaggedSnapshot();
+			} else {
+				promise = snap.validateSnapshots(options.snapshots);
+			}
+			
+			return promise.then(
+				successes => {
+					if (successes.length === 0) {
+						Logger.error("No snapshots to validate (snapshots must have tag \"" + options.tag + "\" set to \"migrated\" to be eligible)");
+					} else {
+						Logger.info("");
+						Logger.info("These snapshots validated successfully:\n" + successes.join("\n"));
+					}
+				},
+				error => {
+					if (error instanceof SnapToS3.SnapshotValidationError) {
+						Logger.info("");
+						
+						if (error.successes.length > 0) {
+							Logger.info("These snapshots validated successfully:\n" + error.successes.join("\n") + "\n");
+						}
+						
+						Logger.error("These snapshots failed to validate:\n" + Object.keys(error.failures).map(snapshotID => snapshotID + ": " + error.failures[snapshotID]).join("\n\n"));
+						process.exitCode = 1;
+					} else {
+						throw error;
+					}
+				}
+			);
+			
 		}
 	})
 	.catch(err => {
 		process.exitCode = 1;
 		
 		if (err instanceof OptionsError) {
-			console.error(err.message);
+			Logger.error(err.message);
+		} else if (err instanceof SnapToS3.SnapshotsMissingError) {
+			Logger.error(err);
 		} else {
-			if (err instanceof SnapToS3.SnapshotMigrationError) {
-				Logger.get(err.snapshotID).error(err.error);
-			} else {
-				Logger.error("Error: " + err + " " + (err.stack ? err.stack : ""));
-			}
+			Logger.error("Error: " + err + " " + (err.stack ? err.stack : ""));
 			Logger.error("");
 			Logger.error("Terminating due to fatal errors.");
 		}

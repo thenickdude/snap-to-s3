@@ -12,6 +12,16 @@
       ]
     },
     {
+      "Sid": "AllowReadingToSupportSnapshotValidationMode",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::backups.example.com/*"
+      ]
+    },
+    {
       "Effect": "Allow",
       "Action": [
         "ec2:CreateVolume",
