@@ -243,6 +243,13 @@ Migrate snapshots to S3
   --all                        Migrate all snapshots whose tag is set to "migrate"
   --one                        ... or migrate any one snapshot whose tag is set to "migrate"
   --snapshots SnapshotId ...   ... or provide an explicit list of snapshots to migrate (tags are ignored)
+  --upload-streams num         Number of simultaneous streams to send to S3 (increases upload speed and
+                               memory usage, default: 4)
+  --compression-level level    LZ4 compression level (1-9, default: 1)
+  --dd                         Use dd to create a raw image of the entire volume, instead of tarring up the
+                               files of each partition
+  --sse mode                   Enables server-side encryption, valid values are AES256 and aws:kms
+  --sse-kms-key-id id          KMS key ID to use for aws:kms encryption, if not using the S3 master KMS key
 
 Validate uploaded snapshots
 
@@ -254,19 +261,16 @@ Validate uploaded snapshots
 
 General options
 
-  --tag name                  Name of tag you have used to mark snapshots for migration, and to mark
-                              created EBS temporary volumes (default: snap-to-s3)
-  --bucket name               S3 bucket to upload to (required)
-  --mount-point path          Temporary volumes will be mounted here, created if it doesn't already exist
-                              (default: /mnt)
-  --upload-streams num        Number of simultaneous streams to send to S3 (increases upload speed and
-                              memory usage, default: 4)
-  --compression-level level   LZ4 compression level (1-9, default: 1)
-  --dd                        Use dd to create a raw image of the entire volume, instead of tarring up the
-                              files of each partition
-  --keep-temp-volumes         Don't delete temporary volumes after we're done with them
-  --volume-type type          Volume type to use for temporary EBS volumes (suggest standard or gp2,
-                              default: standard)
+  --help                 Show this page
+
+  --tag name             Name of tag you have used to mark snapshots for migration, and to mark
+                         created EBS temporary volumes (default: snap-to-s3)
+  --bucket name          S3 bucket to upload to (required)
+  --mount-point path     Temporary volumes will be mounted here, created if it doesn't already exist
+                         (default: /mnt)
+  --keep-temp-volumes    Don't delete temporary volumes after we're done with them
+  --volume-type type     Volume type to use for temporary EBS volumes (suggest standard or gp2,
+                         default: standard)
 ```
 
 ## Performance

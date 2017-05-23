@@ -17,7 +17,7 @@ class OptionsError extends Error {
 }
 
 const
-	mainOptions = [
+	commonOptions = [
 		{
 			name: "help",
 			type: Boolean,
@@ -44,26 +44,6 @@ const
 			defaultValue: "/mnt",
 			typeLabel: "[underline]{path}",
 			description: "Temporary volumes will be mounted here, created if it doesn't already exist (default: $default)"
-		},
-		{
-			name: "upload-streams",
-			type: Number,
-			defaultValue: 4,
-			typeLabel: "[underline]{num}",
-			description: "Number of simultaneous streams to send to S3 (increases upload speed and memory usage, default: $default)"
-		},
-		{
-			name: "compression-level",
-			type: Number,
-			defaultValue: 1,
-			typeLabel: "[underline]{level}",
-			description: "LZ4 compression level (1-9, default: $default)"
-		},
-		{
-			name: "dd",
-			type: Boolean,
-			defaultValue: false,
-			description: "Use dd to create a raw image of the entire volume, instead of tarring up the files of each partition"
 		},
 		{
 			name: "keep-temp-volumes",
@@ -105,6 +85,39 @@ const
 			multiple: true,
 			typeLabel: "[underline]{SnapshotId} ...",
 			description: "... or provide an explicit list of snapshots to migrate (tags are ignored)"
+		},
+		{
+			name: "upload-streams",
+			type: Number,
+			defaultValue: 4,
+			typeLabel: "[underline]{num}",
+			description: "Number of simultaneous streams to send to S3 (increases upload speed and memory usage, default: $default)"
+		},
+		{
+			name: "compression-level",
+			type: Number,
+			defaultValue: 1,
+			typeLabel: "[underline]{level}",
+			description: "LZ4 compression level (1-9, default: $default)"
+		},
+		{
+			name: "dd",
+			type: Boolean,
+			defaultValue: false,
+			description: "Use dd to create a raw image of the entire volume, instead of tarring up the files of each partition"
+		},
+		{
+			name: "sse",
+			type: String,
+			typeLabel: "[underline]{mode}",
+			description: "Enables server-side encryption, valid modes are AES256 and aws:kms"
+		},
+		{
+			name: "sse-kms-key-id",
+			type: String,
+			requireNotEmpty: true,
+			typeLabel: "[underline]{id}",
+			description: "KMS key ID to use for aws:kms encryption, if not using the S3 master KMS key"
 		}
 	],
 	
@@ -117,6 +130,7 @@ const
 		}
 	],
 	
+	// There are just provided for display to make it obvious that --all --one and --snapshots apply to --validate too
 	validateOptionsForDisplayOnly = [
 		{
 			name: "all",
@@ -153,20 +167,22 @@ const
 			optionList: validateOptions.concat(validateOptionsForDisplayOnly)
 		},
 		{
-			header: "General options",
-			optionList: mainOptions
+			header: "Common options",
+			optionList: commonOptions
 		},
 		{
 			header: ""
 		}
-	];
+	],
+
+	allOptions = commonOptions.concat(migrateOptions).concat(validateOptions);
 
 let
 	options;
 
 Logger.useDefaults();
 
-for (let option of mainOptions) {
+for (let option of allOptions) {
 	if (option.description) {
 		option.description = option.description.replace("$default", option.defaultValue);
 	}
@@ -174,7 +190,7 @@ for (let option of mainOptions) {
 
 try {
 	// Parse command-line options
-	options = commandLineArgs(mainOptions.concat(migrateOptions).concat(validateOptions))
+	options = commandLineArgs(allOptions)
 } catch (e) {
 	Logger.error("Error: " + e.message);
 	options = null;
@@ -184,13 +200,12 @@ if (options === null || options.help || process.argv.length <= 2) {
 	console.log(getUsage(usageSections));
 } else {
 	Promise.resolve().then(function() {
-		for (let option of mainOptions) {
-			if (option.required) {
-				if (options[option.name] === undefined) {
-					throw new OptionsError("Option --" + option.name + " is required!");
-				} else if (options[option.name] === null) {
-					throw new OptionsError("Option --" + option.name + " requires an argument!");
-				}
+		for (let option of allOptions) {
+			if (option.required && options[option.name] === undefined) {
+				throw new OptionsError("Option --" + option.name + " is required!");
+			}
+			if ((option.required || option.requireNotEmpty) && options[option.name] === null) {
+				throw new OptionsError("Option --" + option.name + " requires an argument!");
 			}
 		}
 		
@@ -214,7 +229,15 @@ if (options === null || options.help || process.argv.length <= 2) {
 		if (!options.migrate && !options.validate) {
 			throw new OptionsError("You must supply at least one of --migrate or --validate");
 		}
-
+		
+		if (options.sse === "aes256") {
+			// Be nice and capitalise things for the user
+			options.sse = "AES256";
+		} else if (options.sse === null) {
+			// If the user specified --sse, but didn't specify an algorithm, default to AES256 like AWS CLI would
+			options.sse = "AES256";
+		}
+		
         let
 			snap = new SnapToS3(options);
 		
