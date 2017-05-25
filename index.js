@@ -8,7 +8,8 @@ const
 	
 	Logger = require("js-logger"),
 	
-	SnapToS3 = require("./lib/snap-to-s3.js");
+	SnapToS3 = require("./lib/snap-to-s3.js"),
+	SnapCostAnalysis = require("./lib/snap-cost-analysis");
 
 class OptionsError extends Error {
 	constructor(message) {
@@ -153,6 +154,14 @@ const
 		}
 	],
 	
+	analyzeOptions = [
+		{
+			name: "analyze",
+			typeLabel: "[underline]{filename}",
+			description: "Analyze an AWS Cost and Usage report to find opportunities for savings"
+		}
+	],
+	
 	usageSections = [
 		{
 			header: "snap-to-s3",
@@ -167,6 +176,10 @@ const
 			optionList: validateOptions.concat(validateOptionsForDisplayOnly)
 		},
 		{
+			header: "Analyze AWS Cost and Usage reports",
+			optionList: analyzeOptions
+		},
+		{
 			header: "Common options",
 			optionList: commonOptions
 		},
@@ -175,7 +188,7 @@ const
 		}
 	],
 
-	allOptions = commonOptions.concat(migrateOptions).concat(validateOptions);
+	allOptions = commonOptions.concat(migrateOptions, validateOptions, analyzeOptions);
 
 let
 	options;
@@ -200,6 +213,13 @@ if (options === null || options.help || process.argv.length <= 2) {
 	console.log(getUsage(usageSections));
 } else {
 	Promise.resolve().then(function() {
+		if (options.analyze !== undefined) {
+			let
+				analysis = new SnapCostAnalysis(options);
+			
+			return analysis.analyzeReport(options.analyze);
+		}
+		
 		for (let option of allOptions) {
 			if (option.required && options[option.name] === undefined) {
 				throw new OptionsError("Option --" + option.name + " is required!");

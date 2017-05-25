@@ -235,6 +235,68 @@ as large as the "x-amz-meta-snapshot-volumesize" field indicates. If you attache
 aws s3 cp "s3://backups.example.com/vol-xxx/2017-01-01 snap-xxx.img.lz4" - | lz4 -d | sudo dd bs=1M of=/dev/xvdf
 ```
 
+### Analyzing a Cost and Usage report
+
+`snap-to-s3` can examine an Amazon Cost and Usage report to show you a per-volume and 
+per-snapshot breakdown of your EBS snapshot charges, which you can use to identify snapshots 
+suitable for migrating to S3/Glacier.
+
+From your Amazon billing dashboard, go to the Reports section, and create a new report. Choose
+"daily" for the time period, tick the "Include Resource IDs" box, choose GZip compression,
+and select an S3 bucket to store the report in. Around 24 hours later, you should have a .csv.gz 
+report in that bucket to analyze. Download it to your instance.
+
+You can pass that file to `snap-to-s3` using any of these styles:
+
+```bash
+snap-to-s3 --analyze costreport-1.csv 
+
+snap-to-s3 --analyze costreport-1.csv.gz 
+
+aws s3 cp "s3://cost-reports.example.com/20170501-20170601/x-x-x-x-x/costreport-1.csv.gz" - | snap-to-s3 --analyze
+```
+
+`snap-to-s3` will summarize the billing data in the report, then combine it with information about
+your current volumes and snapshots (DescribeVolumes and DescribeSnapshots).
+
+Here's an example output. The effective size of each snapshot is shown next to it, this is the
+amount of data in the snapshot that differs from the previous snapshot, which is the size you 
+are billed for: 
+
+```
+Region us-west-2 ($166.16/month for 24 snapshots)
+vol-xxx (500GB, MySQL Slave DB): 3016 GB total, $151/month for 16 snapshots, average snapshot change 32%
+  snap-xxx  2016-11-01  448.7 GB
+  snap-xxx  2016-12-01  261.7 GB (52%)
+  snap-xxx  2017-01-01  301.5 GB (60%)
+  snap-xxx  2017-02-01  275.4 GB (55%)
+  snap-xxx  2017-03-01  250.5 GB (50%)
+  snap-xxx  2017-04-01  279.3 GB (56%)
+  snap-xxx  2017-05-01  320.6 GB (64%)
+  snap-xxx  2017-05-17  218.1 GB (44%)
+  snap-xxx  2017-05-18  90.8 GB (18%)
+  snap-xxx  2017-05-19  85.2 GB (17%)
+  snap-xxx  2017-05-20  89.4 GB (18%)
+  snap-xxx  2017-05-21  93.2 GB (19%)
+  snap-xxx  2017-05-22  92.6 GB (19%)
+  snap-xxx  2017-05-23  82.8 GB (17%)
+  snap-xxx  2017-05-24  87.1 GB (17%)
+  snap-xxx  2017-05-25  39.5 GB (7.9%)
+
+vol-xxx (20GB, deleted): 5 GB total, $0.247/month for 6 snapshots, average snapshot change 2.1%
+  snap-xxx  2015-04-27   2.4 GB
+  snap-xxx  2015-05-04   0.1 GB (0.43%)
+  snap-xxx  2015-06-01   0.1 GB (0.56%)
+  snap-xxx  2015-06-29   0.1 GB (0.62%)
+  snap-xxx  2016-04-25   2.2 GB (11%)
+  snap-xxx  2016-09-08   0.0 GB (0.069%)
+```
+
+In this case, the older snapshots of the first volume change a lot, so the delta encoding scheme
+of EBS snapshots isn't saving us very much. These snapshots are a great candidate to move to S3
+or Glacier. Whereas the second set of snapshots change by nearly nothing, so S3/Glacier will be
+more expensive.
+
 ### All options
 Here's the full options list:
 
@@ -250,7 +312,7 @@ Migrate snapshots to S3
   --compression-level level    LZ4 compression level (1-9, default: 1)
   --dd                         Use dd to create a raw image of the entire volume, instead of tarring up the
                                files of each partition
-  --sse mode                   Enables server-side encryption, valid values are AES256 and aws:kms
+  --sse mode                   Enables server-side encryption, valid modes are AES256 and aws:kms
   --sse-kms-key-id id          KMS key ID to use for aws:kms encryption, if not using the S3 master KMS key
 
 Validate uploaded snapshots
@@ -261,7 +323,11 @@ Validate uploaded snapshots
   --one                        ... or validate any one snapshot whose tag is set to "migrated"
   --snapshots SnapshotId ...   ... or provide an explicit list of snapshots to validate (tags are ignored)
 
-General options
+Analyze AWS Cost and Usage reports
+
+  --analyze filename   Analyze an AWS Cost and Usage report to find opportunities for savings
+
+Common options
 
   --help                 Show this page
 
