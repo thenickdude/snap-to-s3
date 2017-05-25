@@ -212,7 +212,7 @@ if (options === null || options.help || process.argv.length <= 2) {
 		let
 			subjectCount = 0;
 		
-		if (options.snapshots.length !== 0) {
+		if (options.snapshots && options.snapshots.length !== 0) {
 			subjectCount++;
 		}
 		if (options.all) {
