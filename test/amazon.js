@@ -7,7 +7,6 @@ const
 	assert = require("assert"),
 	
 	Logger = require("js-logger"),
-	rmdir = require("rmdir"),
 	tar = require("tar-stream"),
 	AWS = require("aws-sdk"),
 	commandLineArgs = require("command-line-args"),
@@ -15,7 +14,10 @@ const
 	
 	fsTools = require("../lib/filesystem-tools"),
 	awsTools = require("../lib/aws-tools"),
-	SnapToS3 = require("../lib/snap-to-s3");
+	hashFiles = require("../lib/hash-files"),
+	SnapToS3 = require("../lib/snap-to-s3"),
+
+	common = require("./common");
 
 const
 	// Test EC2 resources will be created with this tag
@@ -26,35 +28,6 @@ const
 	
 	metadataService = new AWS.MetadataService(),
 	
-	/**
-	 * @typedef {Object} Test
-	 * @property {string} name
-	 * @property {function} createFiles
-	 * @property {string} tarHash
-	 * @property {string} tarFilename - Tar filename
-	 */
-	
-	/**
-	 * @type {Test[]}
-	 */
-	tests = [
-		{
-			name: "links",
-			createFiles: createLinkTest
-		},
-		{
-			name: "big-random",
-			createFiles: createBigRandomFilesTest
-		},
-		{
-			name: "nested-directories",
-			createFiles: createNestedDirectoriesTest
-		}
-	],
-	
-	scratchDir = path.resolve(__dirname, ".temp"),
-	tarDir = path.resolve(__dirname, "test-tars"),
-
 	programOptions = [
 		{
 			name: "help",
@@ -85,7 +58,7 @@ const
 	
 	usageSections = [
 		{
-			header: "Tests for snap-to-s3",
+			header: "Amazon tests for snap-to-s3",
 			content: "Constructs a variety of test snapshots and tests snap-to-s3's ability to migrate them to S3. Must " +
 			"be run on an EC2 instance.\n\n" +
 			"This will incur charges on your Amazon account for test resources, and will likely leave these resources " +
@@ -96,7 +69,7 @@ const
 		},
 		{
 			header: "Usage",
-			content: "npm test -- --bucket bucketname"
+			content: "npm run test-amazon -- --bucket bucketname"
 		},
 		{
 			header: "Options",
@@ -139,207 +112,6 @@ function initAWS() {
 	});
 }
 
-/* snap-to-s3 will compute md5s using Node code, so let's test that against a third-party's
- * file reading + MD5 implementation:
- */
-function openSSLMD5File(filename) {
-	return new Promise((resolve, reject) => {
-		child_process.execFile("openssl", ["md5", filename], (error, stdout, stderr) => {
-			if (error) {
-				reject("Failed to run openssl " + args.join(" ") + ": " + error + " " + stderr);
-			} else {
-				let
-					tokens = stdout.split("\n")[0].split(" "),
-					md5Hash = tokens[tokens.length - 1];
-				
-				assert(md5Hash.length === 32);
-				
-				resolve(md5Hash);
-			}
-		});
-	});
-}
-
-function createNestedDirectoriesTest(scratchDir) {
-	return new Promise((resolve, reject) => {
-		fs.writeFileSync(path.resolve(scratchDir, "test-a.txt"), "Hello, world!");
-		fs.mkdirSync(path.resolve(scratchDir, "test-b"));
-		fs.writeFileSync(path.resolve(scratchDir, "test-b", "test-c.txt"), "Goodbye, world!");
-		fs.mkdirSync(path.resolve(scratchDir, "test-b", "test-d"));
-		fs.writeFileSync(path.resolve(scratchDir, "test-b", "test-d", "test-c.txt"), "Same filename but different content!");
-		
-		resolve({
-			expectedHashes: {
-				"test-a.txt": "6cd3556deb0da54bca060b4c39479839",
-				"test-b/test-c.txt": "f6da94e9c2d5ac46e9e8ecee3a1731ff",
-				"test-b/test-d/test-c.txt": "fd0a1f8a82e646dfa6cd2691e5bdf495"
-			}
-		});
-	});
-}
-
-function createLinkTest(scratchDir) {
-	return new Promise((resolve, reject) => {
-		let
-			filenameA = path.resolve(scratchDir, "test-a.txt"),
-			filenameHardLink = path.resolve(scratchDir, "test-hardlink.txt"),
-			filenameSymLink = path.resolve(scratchDir, "test-symlink.txt");
-			
-		fs.writeFileSync(path.resolve(scratchDir, "test-a.txt"), "Hello, world!");
-		fs.linkSync(filenameA, filenameHardLink);
-		fs.symlinkSync("test-a.txt", filenameSymLink);
-		
-		resolve({
-			expectedHashes: {
-				"test-a.txt": "6cd3556deb0da54bca060b4c39479839",
-				"test-hardlink.txt": "6cd3556deb0da54bca060b4c39479839"
-			}
-		});
-	});
-}
-
-function createBigRandomFilesTest(scratchDir) {
-	const
-		fileSizeMB = 200,
-		numFiles = 3;
-	
-	let
-		promise = Promise.resolve(),
-		fileHashes = {};
-		
-	for (let i = 0; i < numFiles; i++) {
-		let
-			filename = "test-random-" + i,
-			outputPath = path.resolve(scratchDir, filename),
-			args = ["if=/dev/urandom", "of=" + outputPath, "bs=1024k", "count=" + fileSizeMB];
-		
-		promise = promise
-			.then(() => new Promise((resolve, reject) => {
-				console.log("Generating " + filename + " using dd from /dev/urandom...");
-				child_process.execFile("dd", args, (error, stdout, stderr) => {
-					if (error) {
-						reject("Failed to run dd " + args.join(" ") + ": " + error + " " + stderr);
-					} else {
-						resolve();
-					}
-				});
-			}))
-			.then(() => {
-				console.log("Hashing " + filename + " with MD5...");
-				
-				return openSSLMD5File(outputPath)
-					.then(hash => fileHashes[filename] = hash);
-			});
-	}
-
-	return promise.then(() => ({
-		expectedHashes: fileHashes
-	}));
-}
-
-function emptyScratchDir() {
-	return new Promise((resolve, reject) => {
-		fs.readdir(scratchDir, (error, files) => {
-			if (error) {
-				reject(error);
-			} else {
-				for (let file of files) {
-					if (!file.match(/^test-/)) {
-						reject("There's a file '" + file + "' in the scratch directory " + scratchDir + " that doesn't start with 'test-'! Am I emptying the right directory?");
-						return;
-					}
-				}
-				
-				let
-					promise = Promise.resolve();
-				
-				for (let file of files) {
-					let
-						filename = path.resolve(scratchDir, file);
-					
-					promise = promise.then(() => new Promise((resolve, reject) => {
-						console.log("rm -rf \"" + filename + "\"");
-						
-						rmdir(filename, (err) => {
-							if (err) {
-								reject(err);
-							} else {
-								resolve();
-							}
-						});
-					}));
-				}
-				
-				promise.then(
-					() => resolve(),
-					err => reject(err)
-				);
-			}
-		});
-	});
-}
-
-function runTarOperationInDirectory(tarFilename, directory, operation) {
-	return new Promise((resolve, reject) => {
-		let
-			args = ["-" + operation + "f", tarFilename, "."];
-		
-		child_process.execFile("tar", args, {
-			cwd: directory
-		}, (error, stdout, stderr) => {
-			if (error) {
-				reject("tar " + args.join(" ") + " failed! " + stderr);
-			} else {
-				resolve();
-			}
-		});
-	});
-}
-
-function createTarFromDirectory(tarFilename, directory) {
-	return runTarOperationInDirectory(tarFilename, directory, "c");
-}
-
-function extractTarToDirectory(tarFilename, directory) {
-	return runTarOperationInDirectory(tarFilename, directory, "x");
-}
-
-function createTestTars() {
-	return fsTools.forcePath(scratchDir)
-		.then(() => fsTools.forcePath(tarDir))
-		.then(() => {
-			let
-				promise = Promise.resolve();
-			
-			for (let test of tests) {
-				test.tarFilename = path.resolve(tarDir, test.name + ".tar");
-				
-				if (!fs.existsSync(test.tarFilename)) {
-					promise = promise
-						.then(() => {
-							console.log("Generating " + test.tarFilename + "...");
-						})
-						.then(() => emptyScratchDir())
-						.then(() => test.createFiles(scratchDir))
-						.then(
-							createFilesResult => createTarFromDirectory(test.tarFilename, scratchDir)
-								.then(() => new Promise((resolve, reject) => {
-									fs.writeFile(test.tarFilename + ".file.md5s", JSON.stringify(createFilesResult.expectedHashes), { encoding: "utf8" }, (err) => {
-										if (err) {
-											reject(err);
-										} else {
-											resolve();
-										}
-									})
-								}))
-						);
-				}
-			}
-			
-			return promise;
-		});
-}
-
 /**
  * We use MD5 hashes of tars to uniquely identify them when they're used as part of testcases uploaded to AWS.
  * Compute those .tar.md5 files for any tars that don't have them already, and add .tarHash properties to all
@@ -349,13 +121,13 @@ function createTestTars() {
  */
 function hashTestTars() {
 	return Promise.all(
-		tests.map(test => new Promise((resolve, reject) => {
+		common.backupTests.map(test => new Promise((resolve, reject) => {
 			let
 				tarMD5Filename = test.tarFilename + ".md5";
 			
 			fs.readFile(tarMD5Filename, { encoding: "utf8" }, (error, data) => {
 				if (error || data.length !== 32) {
-					openSSLMD5File(test.tarFilename)
+					common.openSSLMD5File(test.tarFilename)
 						.then(
 							hash => {
 								test.tarHash = hash;
@@ -683,7 +455,7 @@ function fillTestVolumeWithTests(volume, tests) {
 							})
 							.then(() => {
 								console.log("Writing tar from test '" + test.name + "' to " + mountPath);
-								return extractTarToDirectory(test.tarFilename, mountPath)
+								return common.extractTarToDirectory(test.tarFilename, mountPath)
 							})
 							.then(() => {
 								console.log("Unmounting " + mountPath);
@@ -756,7 +528,7 @@ function findOrCreateTestSnapshot(tests, driveSizeGB) {
 					.then(diskDevice => {
 						console.log("Finished building temp volume, hashing it with MD5...");
 	
-						return openSSLMD5File(diskDevice.DEVICEPATH);
+						return common.openSSLMD5File(diskDevice.DEVICEPATH);
 					})
 					.then(volumeHash => {
 						console.log("Whole volume hashes to " + volumeHash);
@@ -812,37 +584,6 @@ function findOrCreateTestSnapshot(tests, driveSizeGB) {
 }
 
 /**
- *
- * @param {Object} expectedHashes
- * @param {Object} actualHashes
- */
-function checkHashesAgainstExpectations(expectedHashes, actualHashes) {
-	for (let filename of Object.keys(expectedHashes)) {
-		if (!(filename in actualHashes.s3Hashes) || !(filename in actualHashes.localHashes)) {
-			throw filename + " was expected to be part of the upload, but was not found!";
-		}
-		if (expectedHashes[filename] !== actualHashes.s3Hashes[filename]) {
-			throw filename + ": expected a hash of " + expectedHashes[filename] + " but the S3 Tar version has " + actualHashes.s3Hashes[filename];
-		}
-		if (expectedHashes[filename] !== actualHashes.localHashes[filename]) {
-			throw filename + ": expected a hash of " + expectedHashes[filename] + " but the temp EBS volume version has " + actualHashes.localHashes[filename];
-		}
-	}
-	
-	for (let filename of Object.keys(actualHashes.localHashes)) {
-		if (!(filename in expectedHashes)) {
-			throw filename + " exists in the temp EBS volume, but we didn't expect this file to exist.";
-		}
-	}
-	
-	for (let filename of Object.keys(actualHashes.s3Hashes)) {
-		if (!(filename in expectedHashes)) {
-			throw filename + " exists in the S3 Tar, but we didn't expect this file to exist.";
-		}
-	}
-}
-
-/**
  * Create a snapshot of a volume that contains the given tests, then see if snap-to-s3 can migrate the snapshot
  * faithfully.
  *
@@ -868,7 +609,6 @@ function testSnapshotMigration(tests, driveSizeGB, useDD) {
 					"validate": true,
 					"dd": !!useDD // Turn undefined into a nice clean false
 				}),
-				expectedHashes,
 				testIndex,
 			
 				checkHashReceivedCount = () => {
@@ -877,31 +617,34 @@ function testSnapshotMigration(tests, driveSizeGB, useDD) {
 							throw "Didn't receive a confirmation of the MD5 hash for the device from snap-to-s3, what went wrong?";
 						}
 					} else if (testIndex !== tests.length) {
-						throw "Didn't receive file hashes for every partition we supplied? Did they all get uploaded?";
+						throw "Didn't receive file hashes for every partition we supplied, did they all get uploaded?";
 					}
 				};
-			
-			if (useDD) {
-				// We attached a hash of the entire test volume snapshot when we first created it, use that
-				expectedHashes = snapshot.Tags.find(tag => tag.Key === TEST_TAG_KEY + "-md5").Value;
-				assert(expectedHashes.length === 32);
-			} else {
-				// Each test has written a manifest showing what files are expected to be hashable and what their hashes are
-				expectedHashes = tests.map(test => JSON.parse(fs.readFileSync(test.tarFilename + ".file.md5s", {encoding: "utf8"})));
-			}
-			
-			snapToS3.on("debug", (event) => {
+
+			snapToS3.debugHandler = event => {
 				switch (event.event) {
 					case "tarHashesVerified":
-						checkHashesAgainstExpectations(expectedHashes[testIndex], event.hashes);
-						testIndex++;
+						let
+							test = tests[testIndex++];
+						
+						return hashFiles.compareHashListFiles(
+							event.remoteHashesFile, "uploaded tar",
+							test.tarHashesFilename, "test expectation"
+						).then(numberMatched => {
+							assert(numberMatched === test.numNormalFiles);
+						});
 					break;
 					case "ddHashVerified":
-						assert(expectedHashes === event.hash);
+						// We attached a hash of the entire test volume snapshot when we first created it, use that
+						let
+							expected = snapshot.Tags.find(tag => tag.Key === TEST_TAG_KEY + "-md5").Value;
+						
+						assert(expected.length === 32);
+						assert(expected === event.hash);
 						testIndex++;
 					break;
 				}
-			});
+			};
 			
 			console.log("Attempting to migrate " + snapshot.SnapshotId + " using snap-to-s3 in " + (useDD ? "--dd " : "") + "--migrate --validate mode:");
 			
@@ -941,7 +684,7 @@ function remountReadWrite(devicePath, mountPoint) {
 
 function testSnapshotCorruption() {
 	let
-		test = tests.find(test => test.name === "links");
+		test = common.backupTests.find(test => test.name === "links");
 	
 	return findOrCreateTestSnapshot(test, 1)
 		.then(snapshot => {
@@ -957,14 +700,14 @@ function testSnapshotCorruption() {
 				}),
 				tempPartition = null;
 			
-			snapToS3.on("debug", (event) => {
+			snapToS3.debugHandler = (event) => {
 				switch (event.event) {
 					case "temporaryPartitionMounted":
 						if (tempPartition === null) {
 							tempPartition = event;
 						}
 				}
-			});
+			};
 			
 			console.log("Migrating " + snapshot.SnapshotId + " using snap-to-s3 in --migrate mode:");
 			
@@ -1016,7 +759,7 @@ function runTests() {
 	return initAWS()
 		.then(() => {
 			console.log("Generating tars for tests...");
-			return createTestTars();
+			return common.createTestTars();
 		})
 		.then(() => {
 			console.log("Hashing test tars...");
@@ -1029,14 +772,14 @@ function runTests() {
 				promise = Promise.resolve(),
 				testsByName = {};
 			
-			for (let test of tests) {
+			for (let test of common.backupTests) {
 				testsByName[test.name] = test;
 			}
 			
-			for (let test of tests) {
+			for (let test of common.backupTests) {
 				promise = promise
 					.then(() => {
-						console.log("=== Running test with no parititon table: " + test.name + " ===");
+						console.log("=== Running test with no partition table: " + test.name + " ===");
 						
 						return testSnapshotMigration(test, 1, false);
 					})

@@ -15,11 +15,13 @@ Linux 2017.03.
 This tool must be run on an EC2 instance, and can only operate on snapshots within the same
 region as the instance.
 
-This is a Node.js application, so if you don't have it installed already, install node and npm:
+This is a Node.js application, so if you don't have it installed already, install node (at least
+version 6.0.0 LTS or newer) and npm:
 
 ```bash
 # Ubuntu 16.04
-sudo apt-get install nodejs nodejs-legacy npm
+curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
+sudo apt-get install nodejs
 
 # Amazon Linux
 sudo -i
