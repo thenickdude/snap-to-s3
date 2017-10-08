@@ -1,6 +1,6 @@
 {
   "name": "snap-to-s3",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Upload EBS snapshots to Amazon S3",
   "repository": {
     "type": "git",
@@ -34,10 +34,10 @@
     "moment": "^2.18.1",
     "multipipe": "^1.0.2",
     "object.values": "^1.0.4",
-    "progress": "thenickdude/node-progress#f901750478a76057b9271bda333dd1dcdd5406dd",
+    "progress": "https://github.com/thenickdude/node-progress#f901750478a76057b9271bda333dd1dcdd5406dd",
     "rmdir": "^1.2.0",
     "sprintf-js": "^1.1.0",
-    "tar-stream": "thenickdude/tar-stream#3160e7d60fe142f04e126b8b261248d023200e1b",
+    "tar-stream": "https://github.com/thenickdude/tar-stream#3160e7d60fe142f04e126b8b261248d023200e1b",
     "which": "^1.2.14"
   }
 }
