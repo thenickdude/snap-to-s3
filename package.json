@@ -1,6 +1,6 @@
 {
   "name": "snap-to-s3",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Upload EBS snapshots to Amazon S3",
   "repository": {
     "type": "git",
