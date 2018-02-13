@@ -9,8 +9,8 @@ the snapshots into Glacier](http://docs.aws.amazon.com/AmazonS3/latest/dev/lifec
 
 ## Requirements and installation
 
-This tool is only intended to run on Linux, and has only been tested on Ubuntu 16.04 and Amazon 
-Linux 2017.03.
+This tool is only intended to run on Linux, and has only been tested on Ubuntu 16.04,
+Amazon Linux 2017.03 and Amazon Linux 2 2017.12.
 
 This tool must be run on an EC2 instance, and can only operate on snapshots within the same
 region as the instance.
@@ -21,20 +21,11 @@ version 6.0.0 LTS or newer) and npm:
 ```bash
 # Ubuntu 16.04
 curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
-sudo apt-get install nodejs
+sudo apt-get install -y nodejs
 
 # Amazon Linux
-sudo -i
-# Install NVM:
-curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.2/install.sh | bash
-# Restart your session to activate NVM
-exit
-sudo -i 
-# Use NVM to install Node LTS to the root account:
-nvm install node --lts
-# It seems to be a pain in the ass to get Node installed to a location where it'll be on the 
-# sudoers "secure_path", so instead of using "sudo" to call snap-to-s3, we'll just run it in 
-# an interactive root session...
+curl -sL https://rpm.nodesource.com/setup_6.x | sudo -E bash -
+sudo yum install -y nodejs
 ```
 
 The "lz4" command-line compression tool will be used to compress the tars, so make sure you 
@@ -53,7 +44,7 @@ sudo yum install git
 Now you can fetch and install snap-to-s3 from NPM:
 
 ```bash
-npm install -g snap-to-s3
+sudo npm install -g snap-to-s3
 ```
 
 Or if you download `snap-to-s3` from [its GitHub repository](https://github.com/thenickdude/snap-to-s3), 
