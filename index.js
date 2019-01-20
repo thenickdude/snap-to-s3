@@ -28,14 +28,14 @@ const
 			name: "tag",
 			type: String,
 			defaultValue: "snap-to-s3",
-			typeLabel: "[underline]{name}",
+			typeLabel: "{underline name}",
 			description: "Name of tag you have used to mark snapshots for migration, and to mark created EBS temporary volumes (default: $default)"
 		},
 		{
 			name: "bucket",
 			type: String,
 			required: true,
-			typeLabel: "[underline]{name}",
+			typeLabel: "{underline name}",
 			description: "S3 bucket to upload to (required)"
 		},
 		{
@@ -43,7 +43,7 @@ const
 			type: String,
 			required: true,
 			defaultValue: "/mnt",
-			typeLabel: "[underline]{path}",
+			typeLabel: "{underline path}",
 			description: "Temporary volumes will be mounted here, created if it doesn't already exist (default: $default)"
 		},
 		{
@@ -56,7 +56,7 @@ const
 			name: "volume-type",
 			type: String,
 			defaultValue: "standard",
-			typeLabel: "[underline]{type}",
+			typeLabel: "{underline type}",
 			description: "Volume type to use for temporary EBS volumes (suggest standard or gp2, default: $default)"
 		}
 	],
@@ -84,21 +84,21 @@ const
 			name: "snapshots",
 			type: String,
 			multiple: true,
-			typeLabel: "[underline]{SnapshotId} ...",
+			typeLabel: "{underline SnapshotId} ...",
 			description: "... or provide an explicit list of snapshots to migrate (tags are ignored)"
 		},
 		{
 			name: "upload-streams",
 			type: Number,
 			defaultValue: 4,
-			typeLabel: "[underline]{num}",
+			typeLabel: "{underline num}",
 			description: "Number of simultaneous streams to send to S3 (increases upload speed and memory usage, default: $default)"
 		},
 		{
 			name: "compression-level",
 			type: Number,
 			defaultValue: 1,
-			typeLabel: "[underline]{level}",
+			typeLabel: "{underline level}",
 			description: "LZ4 compression level (1-9, default: $default)"
 		},
 		{
@@ -110,15 +110,23 @@ const
 		{
 			name: "sse",
 			type: String,
-			typeLabel: "[underline]{mode}",
+			typeLabel: "{underline mode}",
 			description: "Enables server-side encryption, valid modes are AES256 and aws:kms"
 		},
 		{
 			name: "sse-kms-key-id",
 			type: String,
 			requireNotEmpty: true,
-			typeLabel: "[underline]{id}",
+			typeLabel: "{underline id}",
 			description: "KMS key ID to use for aws:kms encryption, if not using the S3 master KMS key"
+		},
+		{
+			name: "gpg-recipient",
+			type: String,
+			requireNotEmpty: true,
+			lazyMultiple: true,
+			typeLabel: "{underline KeyName/KeyID}",
+			description: "Encrypt the image for the given GPG recipient (add multiple times for multiple recipients)"
 		}
 	],
 	
@@ -128,6 +136,13 @@ const
 			type: Boolean,
 			defaultValue: false,
 			description: "Validate uploaded snapshots from S3 against the original EBS snapshots (can be combined with --migrate)"
+		},
+		{
+			name: "gpg-session-key",
+			type: String,
+			requireNotEmpty: true,
+			typeLabel: "{underline key}",
+			description: "For snapshot validation, see readme for details"
 		}
 	],
 	
@@ -149,7 +164,7 @@ const
 			name: "snapshots",
 			type: String,
 			multiple: true,
-			typeLabel: "[underline]{SnapshotId} ...",
+			typeLabel: "{underline SnapshotId} ...",
 			description: "... or provide an explicit list of snapshots to validate (tags are ignored)"
 		}
 	],
@@ -157,7 +172,7 @@ const
 	analyzeOptions = [
 		{
 			name: "analyze",
-			typeLabel: "[underline]{filename}",
+			typeLabel: "{underline filename}",
 			description: "Analyze an AWS Cost and Usage report to find opportunities for savings"
 		}
 	],
@@ -205,7 +220,7 @@ try {
 	// Parse command-line options
 	options = commandLineArgs(allOptions)
 } catch (e) {
-	Logger.error("Error: " + e.message);
+	Logger.error(e.message);
 	options = null;
 }
 
@@ -278,16 +293,6 @@ if (options === null || options.help || process.argv.length <= 2) {
 					if (migrated.length === 0) {
 						Logger.error("No snapshots to migrate (snapshots must have tag \"" + options.tag + "\" set to \"migrate\" to be eligible)");
 					}
-				},
-				error => {
-					if (error instanceof SnapToS3.SnapshotMigrationError) {
-						Logger.get(error.snapshotID).error(error.error);
-						Logger.error("");
-						Logger.error("Terminating due to fatal errors.");
-						process.exitCode = 1;
-					} else {
-						throw error;
-					}
 				}
 			);
 		} else if (options.validate) {
@@ -334,10 +339,14 @@ if (options === null || options.help || process.argv.length <= 2) {
 		
 		if (err instanceof OptionsError) {
 			Logger.error(err.message);
+		} else if (err instanceof SnapToS3.SnapshotMigrationError) {
+			Logger.get(err.snapshotID).error(err);
+			Logger.error("");
+			Logger.error("Terminating due to fatal errors.");
 		} else if (err instanceof SnapToS3.SnapshotsMissingError) {
 			Logger.error(err);
 		} else {
-			Logger.error("Error: " + err + " " + (err.stack ? err.stack : ""));
+			Logger.error(err);
 			Logger.error("");
 			Logger.error("Terminating due to fatal errors.");
 		}

@@ -43,7 +43,7 @@ const
 			name: "bucket",
 			type: String,
 			required: true,
-			typeLabel: "[underline]{name}",
+			typeLabel: "{underline name}",
 			description: "S3 bucket to upload to for testing (required, must be dedicated for testing only)"
 		},
 		{
@@ -51,7 +51,7 @@ const
 			type: String,
 			required: true,
 			defaultValue: "/mnt",
-			typeLabel: "[underline]{path}",
+			typeLabel: "{underline path}",
 			description: "Temporary volumes will be mounted here, created if it doesn't already exist (default: $default)"
 		}
 	],

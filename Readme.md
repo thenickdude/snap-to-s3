@@ -305,11 +305,14 @@ Migrate snapshots to S3
                                files of each partition
   --sse mode                   Enables server-side encryption, valid modes are AES256 and aws:kms
   --sse-kms-key-id id          KMS key ID to use for aws:kms encryption, if not using the S3 master KMS key
+  --gpg-recipient keyname      Encrypt the image for the given GPG recipient (add multiple times for
+                               multiple recipients)
 
 Validate uploaded snapshots
 
   --validate                   Validate uploaded snapshots from S3 against the original EBS snapshots (can
                                be combined with --migrate)
+  --gpg-session-key key        See readme for details
   --all                        Validate all snapshots whose tag is set to "migrated"
   --one                        ... or validate any one snapshot whose tag is set to "migrated"
   --snapshots SnapshotId ...   ... or provide an explicit list of snapshots to validate (tags are ignored)
@@ -509,7 +512,7 @@ will likely still have its tag set to "migrating", which will prevent it from be
 again when calling `snap-to-s3 --migrate --all`. 
 
 You can either manually change that snapshot tag in the EC2 web console to "migrate" 
-before trying again, or you can explicitly pass the snapshot id to the `--snapshot` argument 
+before trying again, or you can explicitly pass the snapshot id to the `--snapshots` argument 
 which will ignore the "migrating" tag for you.
 
 If `snap-to-s3` receives a `SIGHUP` from your SSH session dropping, it will be killed. 
@@ -527,3 +530,164 @@ You can use
 remove those leftovers. Another option is to add a lifecycle policy to the S3 bucket which
 automatically deletes incomplete multipart uploads after X days (where X is comfortably longer
 than the longest snapshot upload time you expect with snap-to-s3).
+
+## Encrypting snapshots with GPG
+
+Snapshots can be additionally encrypted using `gpg2`'s asymmetric encryption before they are uploaded to S3. By allowing
+the corresponding private key to be stored offsite (perhaps in a hardware device such as a YubiKey), this allows 
+encrypted snapshots to be stored on S3 that cannot be decrypted even if the AWS root account is compromised.
+
+You need to have gpg2 installed (typically provided by the `gnupg2` package), and the public keys that you will encrypt
+the snapshot to need to be loaded into GPG and marked as trusted (e.g. with `gpg2 --import` or `gpg2 --recv-keys`, 
+then `gpg2 --edit-key`). Then when you call `snap-to-s3 --migrate`, you can add `--gpg-recipient` arguments (one per 
+public key) that name the public keys that GPG will encrypt the snapshot to, for example:
+
+```bash
+snap-to-s3 --migrate --gpg-recipient SnapToS3Example --bucket backups.example.com --snapshots snap-xxx
+```
+
+However, the encryption poses a challenge if you want to use the `--validate` command, because the snapshot needs to be 
+decrypted in order to perform validation, and this requires the corresponding private key to be available to `snap-to-s3`.
+
+There are two main strategies for dealing with this:
+
+### Validation where the private key is available to snap-to-s3
+
+Let's imagine that you were okay with storing both the public and private keys for the snapshot on the `snap-to-s3` 
+instance (after carefully considering the security implications). If you don't already have one, you could generate 
+such a key like this:
+
+```
+# gpg2 --full-gen-key
+
+gpg (GnuPG) 2.1.11; Copyright (C) 2016 Free Software Foundation, Inc.
+
+Please select what kind of key you want: 1 RSA and RSA (default)
+What keysize do you want? (2048) 2048
+Key is valid for? (0) 10y
+
+Real name: SnapToS3Example
+Email address: n.sherlock@gmail.com
+
+You selected this USER-ID:
+    "SnapToS3Example <n.sherlock@gmail.com>"
+    
+gpg: Please enter a passphrase to protect your private key
+...
+
+gpg: key 142906AF marked as ultimately trusted
+
+gpg: checking the trustdb
+gpg: marginals needed: 3  completes needed: 1  trust model: PGP
+gpg: depth: 0  valid:   3  signed:   0  trust: 0-, 0q, 0n, 0m, 0f, 3u
+gpg: next trustdb check due at 2029-01-18
+pub   rsa2048/142906AF 2019-01-21 [S] [expires: 2029-01-18]
+      Key fingerprint = 06C9 ADB1 E792 4C6F 5CF0  5473 98FC 45D4 1429 06AF
+uid         [ultimate] SnapToS3Example <n.sherlock@gmail.com>
+sub   rsa2048/84B62A1E 2019-01-21 [] [expires: 2029-01-18]
+```
+
+Then you can use snap-to-s3 to encrypt a snapshot to that key like so:
+
+```bash
+snap-to-s3 --migrate --validate --gpg-recipient SnapToS3Example --bucket backups.example.com --snapshots snap-xxx
+```
+
+However, in order for the `--validate` to succeed, the private key needs to have its passphrase unlocked. `snap-to-s3` 
+is not able to accept keyboard input while uploading, so gpg will fail when it tries to prompt for a passphrase.
+You can make this work by "presetting" your passphrase into the GPG agent instead (using the `gnupg-agent` package).
+
+Passphrase presetting is disabled in the agent's default configuration. Edit `~/.gnupg/gpg-agent.conf` (you'll probably 
+need to create this file) to add:
+
+```
+allow-preset-passphrase
+```
+
+Restart the agent to make it reload this config by running:
+
+```bash
+gpg-connect-agent reloadagent /bye
+```
+
+To preset the passphrase for a key, we must first find out the key's "keygrip". To do this run:
+
+```bash
+# gpg2 --list-keys --with-keygrip
+
+/root/.gnupg/pubring.kbx
+------------------------
+pub   rsa2048/142906AF 2019-01-21 [SC] [expires: 2029-01-18]
+      Keygrip = 22C54011D7772B7B23F2FBD0D69AAE74873BEAD0
+uid         [ultimate] SnapToS3Example <n.sherlock@gmail.com>
+sub   rsa2048/84B62A1E 2019-01-21 [E] [expires: 2029-01-18]
+      Keygrip = 04A78677528EE326B8AFEE81C4823B47F30DECDC
+```
+
+The keygrip we need is the one for the "[E]" (encryption) subkey. Now use that keygrip to run:
+
+```bash
+/usr/lib/gnupg2/gpg-preset-passphrase --preset 04A78677528EE326B8AFEE81C4823B47F30DECDC
+``` 
+
+The utility will then wait for you to enter your passphrase and press enter. Note that your passphrase will be echoed 
+out to the terminal in the clear (this utility doesn't replace it with stars to hide it).
+
+Now `snap-to-s3` should be able to successfully validate the upload of snapshots that use this key (until the system or 
+GPG agent is restarted).
+
+### Validation where the private key never leaves your local machine
+
+You may not want your private key to ever touch Amazon, or to ever be exported from your local hardware key storage 
+device. This means that `snap-to-s3` will not be able to use that key to decrypt its uploaded archives for validation, 
+so `--validate` will fail.
+
+One way of solving this is to generate an additional keypair just for `snap-to-s3` to use. Cache the passphrase for
+snap-to-s3's key using the instructions in the previous section. When migrating your snapshots,
+add both your original keypair and the `snap-to-s3` keypair as recipients with `--gpg-recipient` (e.g. 
+`--gpg-recipient SnapToS3Example --gpg-recipient "Nicholas Sherlock"`). Then once you're 
+satisfied that your snapshots have uploaded correctly using `--validate`, you can securely destroy the snap-to-s3 
+keypair, leaving your original keypair as the only surviving key that can decrypt the snapshots. If you're not keen on 
+that solution, read on: 
+
+When GPG encrypts an archive, it generates a random session key, which is used to encrypt the archive using symmetric
+encryption, then that session key is encrypted with the public key of the recipient and stored into the archive. 
+For decryption, the process is reversed: first the session key is decrypted with the corresponding private key. That's
+the part that `snap-to-s3` cannot perform, since it doesn't have access to the private key.
+
+However, you can do that part of the process yourself manually on your local machine. First, use `snap-to-s3` to encrypt
+and upload your snapshot using `--migrate --keep-temp-volumes --gpg-recipient YourPublicKey` (no `--validate`). 
+Then, on your local machine where your private key resides, you can decrypt the session key from the uploaded file like 
+so:
+
+```bash 
+aws s3 cp "s3://backups.example.com/vol-xxx/2019-01-21T00:16:59+00:00 snap-xxx.tar.lz4.gpg" - \
+	| head -c 524288 \
+	| gpg2 --decrypt --show-session-key \
+	> /dev/null
+	
+gpg: encrypted with 4096-bit RSA key, ID 45BE6A42B05996C3, created 2018-08-08
+      "Nicholas Sherlock <n.sherlock@gmail.com>"
+gpg: session key: '9:D41D8DB13C9CA64F9E24C697973599B6B1E71BEFE8C7BAB41AC8FD97C4F14143'
+gpg: block_filter 0x00007f8fc1100020: read error (size=11277,a->size=11277)
+gpg: WARNING: encrypted message has been manipulated!
+gpg: block_filter: pending bytes!
+```
+
+This command fetches the first 512kB of the archive, which is large enough that it should contain the encrypted session 
+key packet (since that appears at the start of the archive), then pipes that to GPG to decrypt and print out the session 
+key. GPG will prompt you for your passphrase (or your hardware key device) for decryption. (The decrypted archive output 
+that would normally be sent to stdout is piped to `/dev/null` to be discarded.) You can ignore the error messages, as 
+they are merely being triggered by the file being truncated by `head`. 
+
+Back on your EC2 instance, you can now give that key to `snap-to-s3` for validation:
+
+```bash
+snap-to-s3 --validate --bucket backups.example.com --snapshots snap-xxx --gpg-session-key "9:D41D8DB13C9CA64F9E24C697973599B6B1E71BEFE8C7BAB41AC8FD97C4F14143"
+```
+
+This key allows `snap-to-s3` to decrypt the archive for verification, without having to give it access to your private 
+GPG key.
+
+Note that because you can only supply a single session key to `snap-to-s3`, you can only validate a single snapshot at
+a time using this method.
