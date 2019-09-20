@@ -1,4 +1,4 @@
-# snap-to-s3 (beta)
+# snap-to-s3
 
 This tool will turn AWS EBS volume snapshots into temporary EBS volumes, tar them up, compress 
 them with LZ4, and upload them to Amazon S3 for you. You can also opt to create an image of the 
