@@ -55,9 +55,9 @@ const
 		{
 			name: "volume-type",
 			type: String,
-			defaultValue: "standard",
+			defaultValue: "auto",
 			typeLabel: "{underline type}",
-			description: "Volume type to use for temporary EBS volumes (suggest standard or gp2, default: $default)"
+			description: "Volume type to use for temporary EBS volumes (e.g. standard or gp2, by default will use standard for <=1TiB volumes and gp2 for larger)"
 		}
 	],
 	

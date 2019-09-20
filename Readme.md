@@ -331,8 +331,9 @@ Common options
   --mount-point path     Temporary volumes will be mounted here, created if it doesn't already exist
                          (default: /mnt)
   --keep-temp-volumes    Don't delete temporary volumes after we're done with them
-  --volume-type type     Volume type to use for temporary EBS volumes (suggest standard or gp2,
-                         default: standard)
+  --volume-type type     Volume type to use for temporary EBS volumes (e.g. standard or gp2), by default
+                         standard volumes will be used for volumes 1TiB and smaller, gp2 will be used for
+                         larger volumes
 ```
 
 ## Performance
