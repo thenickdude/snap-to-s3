@@ -299,7 +299,7 @@ Migrate snapshots to S3
   --one                        ... or migrate any one snapshot whose tag is set to "migrate"
   --snapshots SnapshotId ...   ... or provide an explicit list of snapshots to migrate (tags are ignored)
   --upload-streams num         Number of simultaneous streams to send to S3 (increases upload speed and
-                               memory usage, default: 4)
+                               memory usage, default: 1)
   --compression-level level    LZ4 compression level (1-9, default: 1)
   --dd                         Use dd to create a raw image of the entire volume, instead of tarring up the
                                files of each partition
@@ -363,10 +363,9 @@ Node will consume the most memory. Of that memory, the S3 upload process will us
 The part size is set automatically based on the uncompressed size of the data being uploaded, 
 it is approximately `uncompressed_size / 9000`, and is always at least 5MB.
  
-The number of upload streams defaults to 4. This helps to overcome the effective TCP speed 
-limits you would run in to when using a single TCP connection, and reduces the impact of the 
-latency of starting the upload of the next part. You can change the number of upload streams 
-with the `--upload-streams` option.
+The number of upload streams defaults to 1. If your snapshot volume can be read very quickly
+(e.g. if you are using EBS Snapshot Fast Restore), this may be a bottleneck, and you may
+want to bump this up using the `--upload-streams` option.
 
 Here's the minimum amount of memory that would be consumed with various volume sizes (for 
 100% full volumes):

@@ -90,7 +90,7 @@ const
 		{
 			name: "upload-streams",
 			type: Number,
-			defaultValue: 4,
+			defaultValue: 1,
 			typeLabel: "{underline num}",
 			description: "Number of simultaneous streams to send to S3 (increases upload speed and memory usage, default: $default)"
 		},
