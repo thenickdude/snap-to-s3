@@ -1,7 +1,7 @@
 # snap-to-s3
 
 This tool will turn AWS EBS volume snapshots into temporary EBS volumes, tar them up, compress 
-them with LZ4, and upload them to Amazon S3 for you. You can also opt to create an image of the 
+them with LZ4/ZSTD, and upload them to Amazon S3 for you. You can also opt to create an image of the 
 entire volume by using `dd`, instead of using `tar`.
 
 Once stored on S3, you could add an S3 Lifecycle Rule to the S3 bucket to automatically [migrate
@@ -9,37 +9,38 @@ the snapshots into Glacier](http://docs.aws.amazon.com/AmazonS3/latest/dev/lifec
 
 ## Requirements and installation
 
-This tool is only intended to run on Linux, and has only been tested on Ubuntu 16.04,
+This tool is only intended to run on Linux, and has only been tested on Ubuntu 16.04, 20.04,
 Amazon Linux 2017.03 and Amazon Linux 2 2017.12.
 
 This tool must be run on an EC2 instance, and can only operate on snapshots within the same
 region as the instance.
 
 This is a Node.js application, so if you don't have it installed already, install node (at least
-version 6.0.0 LTS or newer) and npm:
+version 10 LTS or newer) and npm:
 
 ```bash
-# Ubuntu 16.04
-curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
+# Ubuntu 20.04
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Amazon Linux
-curl -sL https://rpm.nodesource.com/setup_6.x | sudo -E bash -
-sudo yum install -y nodejs
+# Amazon Linux 2
+curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
 ```
 
-The "lz4" command-line compression tool will be used to compress the tars, so make sure you 
+By default the "lz4" command-line compression tool will be used to compress the tars, so make sure you 
 have it available:
 
 ```bash
-# Ubuntu 16.04
+# Ubuntu 20.04
 sudo apt-get install liblz4-tool
 
-# Amazon Linux
+# Amazon Linux 2
 sudo yum install lz4
 # We'll also need git for installation:
 sudo yum install git
 ```
+
+If you want to use zstd compression instead (with `--compression zstd`), make sure you have the "zstd" package installed.
 
 Now you can fetch and install snap-to-s3 from NPM:
 
@@ -298,9 +299,10 @@ Migrate snapshots to S3
   --all                        Migrate all snapshots whose tag is set to "migrate"
   --one                        ... or migrate any one snapshot whose tag is set to "migrate"
   --snapshots SnapshotId ...   ... or provide an explicit list of snapshots to migrate (tags are ignored)
-  --upload-streams num         Number of simultaneous streams to send to S3 (increases upload speed and
-                               memory usage, default: 1)
-  --compression-level level    LZ4 compression level (1-9, default: 1)
+  --upload-streams num         Number of simultaneous streams to send to S3 (increases memory usage, 
+                               default: 1)
+  --compression name           Compression type to use (lz4 or zstd, default: lz4)
+  --compression-level level    Compression level (1-9 for lz4, 1-19 for zstd, default: 1)
   --dd                         Use dd to create a raw image of the entire volume, instead of tarring up the
                                files of each partition
   --sse mode                   Enables server-side encryption, valid modes are AES256 and aws:kms
@@ -353,9 +355,16 @@ reached like network speed and CPU usage.
 
 ## Resource usage
 
-lz4 consumes the largest portion of the CPU time. If you're on a t2-series instance, you'll 
-probably want to use the least amount of compression (`--compression-level 1`), which is the 
-default. Faster instances can afford to use up to level 9.
+The compression consumes the largest portion of the CPU time. If you're on a t2-series instance, 
+you'll probably want to use the least amount of compression (`--compression-level 1`), which is
+the default. Faster instances can afford to use up to level 9. If you're using compression 
+levels beyond about 1 or 2 with lz4, consider switching to zstd compression using 
+`--compression zstd` instead, as it gives much better compression ratios at the same speed
+at these levels.
+
+As an example, using zstd at compression level 9, on a c5.large, the 2 vCPUs are completely 
+maxed out with 9 parallel upload processes (i.e. 4.5 processes per vCPU). This measurement 
+should scale to the other instances in the c5 family.
 
 Node will consume the most memory. Of that memory, the S3 upload process will use at least 
 `part_size * num_upload_streams` bytes to buffer the upload. 

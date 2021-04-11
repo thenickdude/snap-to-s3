@@ -92,14 +92,21 @@ const
 			type: Number,
 			defaultValue: 1,
 			typeLabel: "{underline num}",
-			description: "Number of simultaneous streams to send to S3 (increases upload speed and memory usage, default: $default)"
+			description: "Number of simultaneous streams to send to S3 (increases memory usage, default: $default)"
+		},
+		{
+			name: "compression",
+			type: String,
+			defaultValue: "lz4",
+			typeLabel: "{underline name}",
+			description: "Compression type to use (lz4 or zstd, default: $default)"
 		},
 		{
 			name: "compression-level",
 			type: Number,
 			defaultValue: 1,
 			typeLabel: "{underline level}",
-			description: "LZ4 compression level (1-9, default: $default)"
+			description: "Compression level (1-9 for lz4, 1-19 for zstd, default: $default)"
 		},
 		{
 			name: "dd",
@@ -180,7 +187,7 @@ const
 	usageSections = [
 		{
 			header: "snap-to-s3",
-			content: "Creates EBS volumes from snapshots, tars up their files, compresses them with LZ4, and uploads them to S3."
+			content: "Creates EBS volumes from snapshots, tars up their files, compresses them with LZ4/ZSTD, and uploads them to S3."
 		},
 		{
 			header: "Migrate snapshots to S3",
