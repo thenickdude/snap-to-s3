@@ -40,7 +40,12 @@ sudo yum install lz4
 sudo yum install git
 ```
 
-If you want to use zstd compression instead (with `--compression zstd`), make sure you have the "zstd" package installed.
+If you want to use zstd compression instead (with `--compression zstd`), make sure you have the 
+"zstd" package installed.
+
+If your instance attaches its drives using NVMe (i.e. disks have names like /dev/nvme1n1), you 
+also need to have an NVMe tool installed (`ebsnvme-id` provided by the package `ec2-util` on 
+Amazon Linux, or `nvme` provided by the package `nvme-cli` on other Linuxes). 
 
 Now you can fetch and install snap-to-s3 from NPM:
 
