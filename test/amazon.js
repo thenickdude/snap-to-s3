@@ -93,20 +93,28 @@ class OptionsError extends Error {
 
 function initAWS() {
 	return new Promise((resolve, reject) => {
-		metadataService.request("/latest/dynamic/instance-identity/document", (err, data) => {
+		metadataService.fetchMetadataToken(function (err, token) {
 			if (err) {
 				reject(err);
 			} else {
-				instanceIdentity = JSON.parse(data);
-				
-				AWS.config.update({
-					region: instanceIdentity.region
+				metadataService.request("/latest/dynamic/instance-identity/document", {
+					headers: {"x-aws-ec2-metadata-token": token}
+				}, (err, data) => {
+					if (err) {
+						reject(err);
+					} else {
+						instanceIdentity = JSON.parse(data);
+						
+						AWS.config.update({
+							region: instanceIdentity.region
+						});
+						
+						s3 = new AWS.S3();
+						ec2 = new AWS.EC2();
+						
+						resolve();
+					}
 				});
-				
-				s3 = new AWS.S3();
-				ec2 = new AWS.EC2();
-				
-				resolve();
 			}
 		});
 	});
