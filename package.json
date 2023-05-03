@@ -1,6 +1,6 @@
 {
   "name": "snap-to-s3",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Upload EBS snapshots to Amazon S3",
   "repository": {
     "type": "git",
@@ -8,7 +8,7 @@
   },
   "main": "index.js",
   "engines": {
-    "node": ">=10.0"
+    "node": ">=12.0"
   },
   "bin": {
     "snap-to-s3": "index.js"
@@ -20,25 +20,25 @@
   "author": "Nicholas Sherlock <n.sherlock@gmail.com>",
   "license": "0BSD",
   "dependencies": {
-    "aws-sdk": "^2.884.0",
+    "aws-sdk": "^2.1370.0",
     "binary-split": "^1.0.5",
     "clone": "^2.1.2",
-    "command-line-args": "^5.1.1",
-    "command-line-usage": "^6.1.1",
-    "csv-parse": "^4.15.3",
-    "deep-equal": "^2.0.5",
-    "filesize": "^6.1.0",
+    "command-line-args": "^5.2.1",
+    "command-line-usage": "^7.0.1",
+    "csv-parse": "^5.3.9",
+    "deep-equal": "^2.2.1",
+    "filesize": "^10.0.7",
     "gunzip-maybe": "^1.4.2",
     "js-logger": "^1.6.1",
-    "mkdirp": "^1.0.4",
-    "moment": "^2.29.1",
+    "mkdirp": "^3.0.1",
+    "moment": "^2.29.4",
     "multipipe": "^3.0.1",
-    "object.values": "^1.1.3",
+    "object.values": "^1.1.6",
     "progress": "git+https://github.com/thenickdude/node-progress.git#f901750478a76057b9271bda333dd1dcdd5406dd",
-    "promise.any": "^2.0.2",
+    "promise.any": "^2.0.5",
     "rmdir": "^1.2.0",
     "sprintf-js": "^1.1.2",
-    "tar-stream": "git+https://github.com/thenickdude/tar-stream.git#3160e7d60fe142f04e126b8b261248d023200e1b",
+    "tar-stream": "^3.0.0",
     "which": "^2.0.2"
   }
 }

@@ -9,17 +9,21 @@ the snapshots into Glacier](http://docs.aws.amazon.com/AmazonS3/latest/dev/lifec
 
 ## Requirements and installation
 
-This tool is only intended to run on Linux, and has only been tested on Ubuntu 16.04, 20.04,
+This tool is only intended to run on Linux, and has only been tested on Ubuntu 22.04,
 Amazon Linux 2017.03 and Amazon Linux 2 2017.12.
 
 This tool must be run on an EC2 instance, and can only operate on snapshots within the same
 region as the instance.
 
 This is a Node.js application, so if you don't have it installed already, install node (at least
-version 10 LTS or newer) and npm:
+version 12 LTS or newer) and npm:
 
 ```bash
-# Ubuntu 20.04
+# Ubuntu 22.04
+# To use the Ubuntu-bundled Node JS:
+sudo apt-get install -y nodejs npm
+
+# Or to get a newer version:
 curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
@@ -27,11 +31,11 @@ sudo apt-get install -y nodejs
 curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
 ```
 
-By default the "lz4" command-line compression tool will be used to compress the tars, so make sure you 
+By default, the "lz4" command-line compression tool will be used to compress the tars, so make sure you 
 have it available:
 
 ```bash
-# Ubuntu 20.04
+# Ubuntu 22.04
 sudo apt-get install liblz4-tool
 
 # Amazon Linux 2
