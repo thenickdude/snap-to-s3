@@ -173,8 +173,7 @@ function attachVolumeToInstance(volume) {
 			InstanceId: instanceIdentity.instanceId,
 			VolumeId: volume.VolumeId
 		}).promise()
-		// Although just because the volume is in-use, doesn't mean it will appear in the Attached state to the instance
-			.then(() => awsTools.waitForVolumeState(ec2, volume.VolumeId, "in-use", 60, 10 * 1000));
+			.then(() => awsTools.waitForVolumeAttach(ec2, volume.VolumeId, instanceIdentity.instanceId, 60, 10 * 1000))
 	});
 }
 
